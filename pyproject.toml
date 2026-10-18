@@ -1,0 +1,20 @@
+[project]
+name = "note-learn"
+version = "0.1.0"
+description = "Интерактивный тренажёр нот, аппликатуры и слуха для начинающего трубача (в строе Си-бемоль)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.1.0",
+    "pygame-ce>=2.5.2",
+    "sounddevice>=0.5.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
