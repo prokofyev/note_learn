@@ -294,3 +294,121 @@ def test_screens_still_render_in_fullscreen_layout(tmp_path: Path):
     finally:
         app.mic.stop()
         pygame.quit()
+
+
+def _force_exercise(app: TrumpetLearningApp, exercise_type: ExerciseType) -> None:
+    from note_learn.curriculum import Exercise
+    from note_learn.model import NoteDuration
+
+    app.current_exercise = Exercise(
+        exercise_type=exercise_type,
+        target_note=get_note("C4"),
+        duration=NoteDuration.HALF,
+        options=(),
+    )
+    app.current_screen = AppScreen.EXERCISE
+    app.answered = False
+
+
+def _progress_snapshot(app: TrumpetLearningApp) -> tuple:
+    prog = app.profile.note_progress["C4"]
+    return (
+        app.profile.stars,
+        app.profile.xp,
+        app.profile.current_streak,
+        app.round_correct_count,
+        round(prog.mastery, 6),
+        prog.attempts,
+        prog.error_count,
+    )
+
+
+def test_switching_to_no_trumpet_skips_mic_exercise_without_scoring(tmp_path: Path):
+    app = TrumpetLearningApp(save_path=tmp_path / "p.json", audio_enabled=False, headless=True)
+    try:
+        app.start_round(stage_idx=0, round_len=4)
+        app.profile.with_trumpet = True
+        _force_exercise(app, ExerciseType.PLAY_TRUMPET)
+
+        before_progress = _progress_snapshot(app)
+        before_index = app.round_index
+
+        app.toggle_trumpet_mode()
+
+        assert app.profile.with_trumpet is False
+        assert app.mic.active is False
+        # Раунд продвинулся, задание пропущено, но прогресс не изменился.
+        assert app.round_index == before_index + 1
+        assert _progress_snapshot(app) == before_progress
+        assert app.current_exercise is not None
+        assert app.current_exercise.exercise_type is not ExerciseType.PLAY_TRUMPET
+    finally:
+        app.mic.stop()
+        pygame.quit()
+
+
+def test_skipping_last_mic_exercise_opens_summary(tmp_path: Path):
+    app = TrumpetLearningApp(save_path=tmp_path / "p.json", audio_enabled=False, headless=True)
+    try:
+        app.start_round(stage_idx=0, round_len=3)
+        app._round_total = 3
+        app.round_index = 2  # последнее задание раунда
+        app.profile.with_trumpet = True
+        _force_exercise(app, ExerciseType.PLAY_TRUMPET)
+
+        before_correct = app.round_correct_count
+        app.toggle_trumpet_mode()
+
+        assert app.current_screen is AppScreen.SUMMARY
+        # Пропуск не засчитан: правильных ответов не прибавилось.
+        assert app.round_correct_count == before_correct
+    finally:
+        app.mic.stop()
+        pygame.quit()
+
+
+def test_toggling_mode_outside_mic_exercise_does_not_skip(tmp_path: Path):
+    app = TrumpetLearningApp(save_path=tmp_path / "p.json", audio_enabled=False, headless=True)
+    try:
+        for screen in (AppScreen.MAP, AppScreen.SUMMARY, AppScreen.USERS):
+            app.current_screen = screen
+            _force_exercise(app, ExerciseType.STAFF_TO_NAME)
+            app.current_screen = screen
+            before_index = app.round_index
+            app.profile.with_trumpet = True
+
+            app.toggle_trumpet_mode()
+
+            assert app.round_index == before_index
+            assert app.current_exercise is not None
+            assert app.current_exercise.exercise_type is ExerciseType.STAFF_TO_NAME
+
+        # Переключение на задании другого типа в режиме EXERCISE тоже не пропускает.
+        _force_exercise(app, ExerciseType.STAFF_TO_VALVES)
+        before_index = app.round_index
+        app.profile.with_trumpet = True
+        app.toggle_trumpet_mode()
+        assert app.round_index == before_index
+        assert app.current_exercise.exercise_type is ExerciseType.STAFF_TO_VALVES
+    finally:
+        app.mic.stop()
+        pygame.quit()
+
+
+def test_toggling_mode_on_answered_mic_exercise_does_not_skip(tmp_path: Path):
+    app = TrumpetLearningApp(save_path=tmp_path / "p.json", audio_enabled=False, headless=True)
+    try:
+        app.start_round(stage_idx=0, round_len=4)
+        app.profile.with_trumpet = True
+        _force_exercise(app, ExerciseType.PLAY_TRUMPET)
+        app.answered = True  # задание уже отвечено
+
+        before_index = app.round_index
+        app.toggle_trumpet_mode()
+
+        # Отвеченное задание не пропускается — ждём явного перехода через «Дальше».
+        assert app.round_index == before_index
+        assert app.current_exercise.exercise_type is ExerciseType.PLAY_TRUMPET
+    finally:
+        app.mic.stop()
+        pygame.quit()

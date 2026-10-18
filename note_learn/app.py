@@ -293,6 +293,17 @@ class TrumpetLearningApp:
             self.mic.stop()
         self.save_profile()
 
+        # Если трубы нет, а на экране микрофонное задание — пропускаем его без зачёта.
+        if (
+            not self.profile.with_trumpet
+            and self.current_screen is AppScreen.EXERCISE
+            and self.current_exercise is not None
+            and self.current_exercise.exercise_type is ExerciseType.PLAY_TRUMPET
+            and not self.answered
+        ):
+            self.round_index += 1
+            self._load_next_exercise_in_round()
+
     def start_round(self, stage_idx: int | None = None, round_len: int = 8) -> None:
         if stage_idx is not None:
             self.profile.unlock_stage_manually(stage_idx)
