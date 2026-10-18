@@ -127,6 +127,10 @@ class UIRenderer:
         self._accidental_scaled: dict[tuple[Accidental, int], pygame.Surface] = {}
         self._load_accidental_assets()
 
+        self._clef_raw: pygame.Surface | None = None
+        self._clef_scaled: dict[int, pygame.Surface] = {}
+        self._load_clef_asset()
+
     def _load_accidental_assets(self) -> None:
         for acc in (Accidental.SHARP, Accidental.FLAT, Accidental.NATURAL):
             fname = acc.asset_filename
@@ -153,6 +157,33 @@ class UIRenderer:
             new_w = max(8, int(round(w * scale)))
             self._accidental_scaled[key] = pygame.transform.smoothscale(raw, (new_w, target_height))
         return self._accidental_scaled[key]
+
+    def _load_clef_asset(self) -> None:
+        """Загружает рисунок скрипичного ключа assets/GClef.png (если он есть)."""
+        path = self.assets_dir / "GClef.png"
+        if not path.exists():
+            return
+        try:
+            img = pygame.image.load(str(path))
+            if pygame.display.get_surface() is not None:
+                img = img.convert_alpha()
+            self._clef_raw = img
+        except Exception:
+            self._clef_raw = None
+
+    def get_clef_surface(self, target_height: int) -> pygame.Surface | None:
+        """Возвращает масштабированный ключ с сохранением пропорций или None, если ассета нет."""
+        if self._clef_raw is None:
+            return None
+        target_height = max(8, int(target_height))
+        if target_height not in self._clef_scaled:
+            w, h = self._clef_raw.get_size()
+            scale = target_height / max(1, h)
+            new_w = max(4, int(round(w * scale)))
+            self._clef_scaled[target_height] = pygame.transform.smoothscale(
+                self._clef_raw, (new_w, target_height)
+            )
+        return self._clef_scaled[target_height]
 
     def draw_background(self, surface: pygame.Surface) -> None:
         width, height = surface.get_size()
@@ -249,8 +280,8 @@ class UIRenderer:
         pygame.draw.line(surface, STAFF_LINE_COLOR, (staff_right - 8, top_y), (staff_right - 8, bot_y), 2)
         pygame.draw.line(surface, STAFF_LINE_COLOR, (staff_right - 2, top_y), (staff_right - 2, bot_y), 5)
 
-        # Скрипичный ключ слева
-        self._draw_treble_clef(surface, staff_left + 34, bottom_line_y, line_spacing)
+        # Скрипичный ключ слева: рисунок из assets/GClef.png, при отсутствии — векторный запасной.
+        self._draw_staff_clef(surface, staff_left, bottom_line_y, line_spacing)
 
         # Если нужно показать призрачную ноту (например, то, что сейчас слышит микрофон)
         if ghost_note is not None and (note is None or ghost_note.written_midi != note.written_midi):
@@ -286,6 +317,32 @@ class UIRenderer:
         if subtitle:
             sub_surf = self.font_md.render(subtitle, True, TEXT_DARK)
             surface.blit(sub_surf, (rect.centerx - sub_surf.get_width() // 2, rect.bottom - 38))
+
+    # Доля высоты рисунка ключа от верха до центра завитка (линейка «Соль»)
+    CLEF_G_LINE_FRACTION = 0.60
+    # Высота ключа в единицах расстояния между линейками стана
+    CLEF_HEIGHT_IN_SPACINGS = 7.0
+
+    def _draw_staff_clef(
+        self,
+        surface: pygame.Surface,
+        staff_left: int,
+        bottom_line_y: int,
+        line_spacing: int,
+    ) -> None:
+        """
+        Рисует скрипичный ключ слева на стане: из assets/GClef.png, выравнивая
+        завиток по 2-й линейке «Соль». Если ассета нет — векторный запасной вариант.
+        """
+        g_line_y = bottom_line_y - line_spacing
+        target_height = int(round(line_spacing * self.CLEF_HEIGHT_IN_SPACINGS))
+        clef = self.get_clef_surface(target_height)
+        if clef is not None:
+            clef_x = staff_left + 6
+            clef_y = int(round(g_line_y - clef.get_height() * self.CLEF_G_LINE_FRACTION))
+            surface.blit(clef, (clef_x, clef_y))
+            return
+        self._draw_treble_clef(surface, staff_left + 34, bottom_line_y, line_spacing)
 
     def _draw_treble_clef(
         self,

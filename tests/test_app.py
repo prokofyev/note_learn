@@ -225,3 +225,72 @@ def test_users_screen_in_single_profile_mode_is_read_only(tmp_path: Path):
     finally:
         app.mic.stop()
         pygame.quit()
+
+
+def test_headless_mode_does_not_require_fullscreen(tmp_path: Path):
+    app = TrumpetLearningApp(save_path=tmp_path / "p.json", audio_enabled=False, headless=True)
+    try:
+        # В headless-режиме полноэкранный режим не включается и поверхность остаётся полотном вёрстки.
+        assert app.fullscreen is False
+        assert app.screen.get_size() == (1180, 760)
+        assert not (app.screen.get_flags() & pygame.FULLSCREEN)
+    finally:
+        app.mic.stop()
+        pygame.quit()
+
+
+def test_f11_toggles_fullscreen_without_breaking_draw(tmp_path: Path):
+    app = TrumpetLearningApp(
+        save_path=tmp_path / "p.json",
+        audio_enabled=False,
+        headless=True,
+        fullscreen=False,
+    )
+    try:
+        # В headless-режиме переключение безопасно и не включает полный экран.
+        app.handle_event(_keydown(pygame.K_F11))
+        assert app.fullscreen is False
+        app.draw()
+
+        # Прямой вызов set_fullscreen также не ломает отрисовку.
+        app.set_fullscreen(True)
+        app.set_fullscreen(False)
+        assert app.fullscreen is False
+        app.draw()
+    finally:
+        app.mic.stop()
+        pygame.quit()
+
+
+def test_esc_still_navigates_after_fullscreen_toggle(tmp_path: Path):
+    app = TrumpetLearningApp(
+        save_path=tmp_path / "p.json",
+        audio_enabled=False,
+        headless=True,
+        fullscreen=False,
+    )
+    try:
+        app._trigger_action("nav_encyclopedia")
+        assert app.current_screen is AppScreen.ENCYCLOPEDIA
+        app.handle_event(_keydown(pygame.K_F11))
+        app.handle_event(_keydown(pygame.K_ESCAPE))
+        # Esc по-прежнему выходит на карту курса, а не завершает приложение.
+        assert app.current_screen is AppScreen.MAP
+        assert app.running is True
+    finally:
+        app.mic.stop()
+        pygame.quit()
+
+
+def test_screens_still_render_in_fullscreen_layout(tmp_path: Path):
+    app, store = _make_app(tmp_path)
+    try:
+        app.start_round(stage_idx=0, round_len=2)
+        for screen in (AppScreen.EXERCISE, AppScreen.ENCYCLOPEDIA, AppScreen.MAP, AppScreen.USERS):
+            app.current_screen = screen
+            app.update(0.016)
+            app.draw()
+            assert "nav_users" in app._click_targets
+    finally:
+        app.mic.stop()
+        pygame.quit()

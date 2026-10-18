@@ -62,6 +62,7 @@ class TrumpetLearningApp:
         audio_enabled: bool = True,
         headless: bool = False,
         store: ProfileStore | None = None,
+        fullscreen: bool = True,
     ) -> None:
         self.save_path = Path(save_path)
         self.assets_dir = Path(assets_dir)
@@ -70,8 +71,10 @@ class TrumpetLearningApp:
         pygame.init()
         self.width = 1180
         self.height = 760
-        flags = pygame.HIDDEN if headless else 0
-        self.screen = pygame.display.set_mode((self.width, self.height), flags)
+        # Полноэкранный режим использует SCALED: логическое полотно 1180×760
+        # растягивается на весь дисплей без изменения координат вёрстки экранов.
+        self.fullscreen = bool(fullscreen) and not headless
+        self.screen = self._create_display(headless=headless)
         pygame.display.set_caption("Трубач: Учим ноты, аппликатуру и слух (Строй Си-бемоль)")
 
         self.clock = pygame.time.Clock()
@@ -153,6 +156,55 @@ class TrumpetLearningApp:
             self.store.save_active(self.profile)
         else:
             self.profile.save(self.save_path)
+
+    def _create_display(self, headless: bool) -> pygame.Surface:
+        """Создаёт поверхность окна, откатываясь в оконный (или скрытый) режим при ошибке."""
+        size = (self.width, self.height)
+        if headless:
+            return pygame.display.set_mode(size, pygame.HIDDEN)
+
+        if self.fullscreen:
+            try:
+                return pygame.display.set_mode(size, pygame.FULLSCREEN | pygame.SCALED)
+            except Exception:
+                # Полноэкранный режим недоступен — продолжаем в оконном.
+                self.fullscreen = False
+
+        try:
+            return pygame.display.set_mode(size, pygame.SCALED)
+        except Exception:
+            try:
+                return pygame.display.set_mode(size, 0)
+            except Exception:
+                return pygame.display.set_mode(size, pygame.HIDDEN)
+
+    def set_fullscreen(self, enabled: bool) -> None:
+        """Переключает полноэкранный и оконный режим без перезапуска приложения."""
+        if self.headless:
+            self.fullscreen = False
+            return
+
+        requested = bool(enabled)
+        if requested == self.fullscreen:
+            return
+
+        if requested:
+            try:
+                self.screen = pygame.display.set_mode(
+                    (self.width, self.height),
+                    pygame.FULLSCREEN | pygame.SCALED,
+                )
+                self.fullscreen = True
+                return
+            except Exception:
+                # Не удалось развернуть — остаёмся в оконном режиме.
+                self.fullscreen = False
+
+        try:
+            self.screen = pygame.display.set_mode((self.width, self.height), pygame.SCALED)
+        except Exception:
+            self.screen = pygame.display.set_mode((self.width, self.height), 0)
+        self.fullscreen = False
 
     def _fit_text(self, text: str, max_width: int) -> str:
         """Обрезает подпись по ширине, добавляя многоточие, чтобы она влезала в кнопку."""
@@ -392,6 +444,11 @@ class TrumpetLearningApp:
         # Ввод имени пользователя перехватывает клавиши, пока поле активно.
         if self.name_input_active:
             self._handle_name_input_key(event, ch)
+            return
+
+        # F11 переключает полноэкранный и оконный режим на любом экране.
+        if event.key == pygame.K_F11:
+            self.set_fullscreen(not self.fullscreen)
             return
 
         if event.key == pygame.K_ESCAPE:
